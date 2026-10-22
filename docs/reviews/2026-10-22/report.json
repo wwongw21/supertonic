@@ -50,7 +50,7 @@
     "No real model inference, synthesis quality evaluation, GPU execution, browser UI, mobile app, full native-language builds or packaged release testing.",
     "Tests use deterministic fake inference outputs and temporary user-style directories where appropriate; these reproduce control-flow/contracts rather than audio quality.",
     "No GitHub Actions runs exist on these forks according to root's connector query; this is absent evidence, not a failing CI result.",
-    "Repository source files were not edited; test imports may generate ignored __pycache__ files."
+    "Runtime source files were not edited; the historical test imports may generate ignored __pycache__ files."
   ],
   "evidence_file": "report.json",
   "ci_observation": {
@@ -99,7 +99,7 @@
     "schema_version": 1,
     "review_date": "2026-10-22",
     "owner": "wwongw21",
-    "handoff_status": "All findings OPEN; repairs and acceptance checks are PROPOSED. No implementation was performed.",
+    "handoff_status": "All findings OPEN; runtime repairs and acceptance checks are still PROPOSED. Only the portable diagnostic and handoff evidence were added.",
     "audience": [
       "Maintainer implementing corrections",
       "Reviewer checking behavior, preservation of user data and release readiness"
@@ -452,13 +452,32 @@
   },
   "handoff_date": "2026-10-22",
   "all_findings_status": "OPEN",
-  "implementation_status": "No repairs applied; proposed work only.",
+  "implementation_status": "No runtime repairs applied; only the portable diagnostic and handoff evidence were added.",
   "delivery_notes": {
     "destination_repository": "wwongw21/supertonic",
     "status": "All findings remain OPEN; documentation transfer only.",
-    "portable_evidence": "This JSON retains the complete repository-specific handoff. Historical /workspace paths are evidence references and prerequisites, not portable hyperlinks. Applicable repository-specific diagnostics are included alongside the report.",
-    "diagnostics_included": [],
+    "portable_evidence": "Historical /workspace commands and outputs remain unchanged. A separate portable source-level run was captured on 2026-10-22; its log records the UTC time, environment, source pin, and LF-normalized SHA-256 hashes. It does not replace or claim to be the original run.",
+    "diagnostics_included": [
+      "docs/reviews/2026-10-22/diagnostics/repro_pinned_sources.py",
+      "docs/reviews/2026-10-22/evidence/portable-probe-2026-10-22.txt"
+    ],
+    "portable_diagnostic_run": {
+      "command": "python docs/reviews/2026-10-22/diagnostics/repro_pinned_sources.py",
+      "run_utc": "2026-10-22T15:09:05+00:00",
+      "environment": "Python 3.14.7; Windows 11; Python standard library only",
+      "source_pin": "7e2804f96016a7028cb1ed627353c61c1e9dd281",
+      "hash_method": "SHA-256 after CRLF-to-LF normalization",
+      "source_hashes": {
+        "py/helper.py": "b14b1da8a018aa4db6ca8cbb927c32590bfc889b49116ea344c56e8351d94279",
+        "py/example_onnx.py": "2ef5371dc02b9425b130ecc480abeb4714781fabe2059e4f9c68dd5e546dec49"
+      },
+      "results": [
+        "STON-1: AST-extracted TextToSpeech.__call__ concatenated the two fake padded waveforms, and the AST-extracted example trim assignment exported [1, 1, 1, 0, 0, 2], losing the final two nonzero samples.",
+        "STON-2: AST-extracted chunk_text returned one 1,999-character chunk for max_len=300."
+      ],
+      "limits": "Python standard-library AST execution with fake inference outputs and a tiny NumPy-compatible array shim. No project dependencies, ONNX Runtime, model initialization, model weights, or runtime fix."
+    },
     "not_included": "Original environments, model weights, user data and complete source snapshots are not included. Clone the pinned source and follow the recorded prerequisites. Bug-demonstration scripts intentionally assert pre-fix behavior; they are not a post-fix passing suite.",
-    "combined_probe": "The historical repro_supertonic.py depends on both public Supertonic checkouts. It is not included as a repository-specific diagnostic; the report records the original results and the regression scenarios to implement."
+    "combined_probe": "The historical repro_supertonic.py remains absent and its original results remain historical. This repository now carries a focused per-repository stdlib probe for the two recorded Python example behaviors; the sibling supertonic-py repository carries its own probe for the SDK observations."
   }
 }

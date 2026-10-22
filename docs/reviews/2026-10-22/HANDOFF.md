@@ -1,10 +1,10 @@
 # supertonic engineering handoff
 
-Review date: **22 October 2026**. All findings remain **OPEN**. This handoff contains proposed repairs and release checks; no source fixes or new runtime acceptance are claimed.
+Review date: **22 October 2026**. All findings remain **OPEN**. This handoff contains proposed repairs and release checks; no runtime source fixes or repaired-behavior acceptance are claimed.
 
 **Reviewed source:** [`main` at `7e2804f96016a7028cb1ed627353c61c1e9dd281`](https://github.com/wwongw21/supertonic/tree/7e2804f96016a7028cb1ed627353c61c1e9dd281).
 
-The full structured handoff is in [report.json](report.json). Historical commands retain their original review-workspace paths; read the prerequisites before running them. Only repository-specific diagnostics listed below are attached.
+The full structured handoff is in [report.json](report.json). The historical commands and results below retain their original `/workspace` paths and are not portable reruns. Use the checked-in [standard-library reproducer](diagnostics/repro_pinned_sources.py) from the repository root; its fresh output is [captured here](evidence/portable-probe-2026-10-22.txt). It demonstrates pre-fix behavior only and does not apply runtime repairs.
 
 ## Audience and required outcome
 
@@ -464,7 +464,7 @@ wwongw21
 
 ## Handoff status
 
-All findings OPEN; repairs and acceptance checks are PROPOSED. No implementation was performed.
+All findings OPEN; runtime repairs and acceptance checks are still PROPOSED. Only the portable diagnostic and handoff evidence were added.
 
 ## Evidence boundary
 
@@ -766,11 +766,21 @@ All findings remain OPEN; documentation transfer only.
 
 ### Portable evidence
 
-This JSON retains the complete repository-specific handoff. Historical /workspace paths are evidence references and prerequisites, not portable hyperlinks. Applicable repository-specific diagnostics are included alongside the report.
+The historical `/workspace` commands and outputs remain unchanged as records of the original review. The new portable run is separate; it records its UTC time, Python/OS, source pin, and LF-normalized SHA-256 hashes for every source file it executes.
 
 ### Diagnostics included
 
-None recorded.
+Run from the repository root with Python 3.9 or later:
+
+```text
+python docs/reviews/2026-10-22/diagnostics/repro_pinned_sources.py
+```
+
+The probe uses only the Python standard library. It AST-extracts the pinned `TextToSpeech.__call__`, `chunk_text`, and example waveform-trim assignment. It supplies deterministic fake inference outputs and a tiny array shim. No project dependencies, ONNX Runtime, model weights, or model initialization are used. The source hash checks normalize CRLF to LF, so they work from Windows and LF checkouts.
+
+The captured run reproduced both pre-fix results: two padded fake chunk outputs were trimmed by the example's duration-based slice to `[1, 1, 1, 0, 0, 2]`, losing the last two nonzero samples; and `chunk_text("word " * 400, max_len=300)` returned a 1,999-character chunk.
+
+The evidence is [portable-probe-2026-10-22.txt](evidence/portable-probe-2026-10-22.txt). It is a new source-level reproduction and does not replace the historical run results above.
 
 ### Not included
 
@@ -778,7 +788,7 @@ Original environments, model weights, user data and complete source snapshots ar
 
 ### Combined probe
 
-The historical repro_supertonic.py depends on both public Supertonic checkouts. It is not included as a repository-specific diagnostic; the report records the original results and the regression scenarios to implement.
+The historical `repro_supertonic.py` still is not included. This repository now contains a self-contained probe for its two recorded Python example observations; the sibling `supertonic-py` repository has a separate probe for its four SDK observations. Each run checks its own pinned source hashes.
 
 
 ## Remaining review limits
@@ -789,5 +799,5 @@ The historical repro_supertonic.py depends on both public Supertonic checkouts. 
 
 3. No GitHub Actions runs exist on these forks according to root's connector query; this is absent evidence, not a failing CI result.
 
-4. Repository source files were not edited; test imports may generate ignored __pycache__ files.
+4. Runtime source files were not edited; the historical test imports may generate ignored __pycache__ files.
 

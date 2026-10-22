@@ -1,0 +1,12 @@
+Portable pre-fix reproduction; stdlib AST extraction runs the pinned TextToSpeech.__call__, chunk_text, and example trim assignment.
+invocation=python docs/reviews/2026-10-22/diagnostics/repro_pinned_sources.py
+run_utc=2026-10-22T15:09:05+00:00
+python=3.14.7; platform=Windows 11
+mocks=fake _infer outputs and tiny NumPy-compatible array operations; no model files loaded
+repository=supertonic; source_pin=7e2804f96016a7028cb1ed627353c61c1e9dd281
+hash_method=SHA-256 of UTF-8 source bytes after CRLF-to-LF normalization
+source_sha256=b14b1da8a018aa4db6ca8cbb927c32590bfc889b49116ea344c56e8351d94279  path=py/helper.py
+source_sha256=2ef5371dc02b9425b130ecc480abeb4714781fabe2059e4f9c68dd5e546dec49  path=py/example_onnx.py
+STON-1 padded chunks: actual helper chunks=2; fake inference rows=[1,1,1,0,0] and [2,2,2,0,0]; durations=[0.3,0.3] at 10 Hz; exact example trim exports=[1, 1, 1, 0, 0, 2]
+STON-2 chunk length: configured max=300; actual chunk lengths=[1999]
+result=both historical source-level bug behaviors reproduced; no runtime fix applied
