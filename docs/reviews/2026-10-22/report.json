@@ -1,0 +1,464 @@
+{
+  "name": "supertonic",
+  "sha": "7e2804f96016a7028cb1ed627353c61c1e9dd281",
+  "coverage": "Python and Node/browser ONNX helpers and example entry points, C++ helper/build configuration, Rust CLI and helper review, language-package manifests, top-level cross-language test script; remaining mobile/native language implementations sampled. No AGENTS.md present.",
+  "findings": [
+    {
+      "id": "STON-1",
+      "severity": "Medium",
+      "title": "Long-form output trims off the end after concatenating padded chunks",
+      "file": "py/helper.py",
+      "lines": [
+        234,
+        243
+      ],
+      "evidence": "TextToSpeech.__call__ concatenates full vocoder waveforms while adding only predicted durations. sample_noisy_latent rounds each latent length up to a chunk boundary (helper.py:165-169), and _infer returns wav unchanged. example_onnx.py:113 then trims the concatenated waveform to the sum of predicted durations. Internal padding remains in the middle, so the final trim removes audio from later chunks. Node and browser helpers have the same concatenate/sum-duration structure (nodejs/helper.js:289-299; web/helper.js:287-297).",
+      "impact": "Multi-chunk long-form exports contain extra gaps at chunk boundaries and lose the final portion of the synthesized passage as accumulated padding grows. Single-chunk output is unaffected by this particular bug.",
+      "recommendation": "Trim each individual waveform to its actual/predicted sample count before concatenating; compute the combined duration from the final concatenated sample count. Preserve independently trimmed rows for batched outputs.",
+      "validation": "Confirmed orchestration using the real Python helper with _infer replaced by deterministic padded outputs: two chunks [1,1,1,0,0] and [2,2,2,0,0], each with duration 0.3 s at 10 Hz, export as [1,1,1,0,0,2], losing the last two nonzero samples. No real ONNX model was run; the test proves padding/concatenation/trim behavior.",
+      "classification": "Confirmed through the validation described below",
+      "disposition": "Act on",
+      "source_sha": "7e2804f96016a7028cb1ed627353c61c1e9dd281",
+      "source_url": "https://github.com/wwongw21/supertonic/blob/7e2804f96016a7028cb1ed627353c61c1e9dd281/py/helper.py#L234"
+    },
+    {
+      "id": "STON-2",
+      "severity": "Medium",
+      "title": "The Python example does not enforce its maximum chunk length",
+      "file": "py/helper.py",
+      "lines": [
+        418,
+        427
+      ],
+      "evidence": "An overlong sentence is assigned unchanged to current_chunk; there is no word/character fallback. ASCII-only sentence boundary detection also misses Japanese punctuation.",
+      "impact": "Unpunctuated long passages and Japanese paragraphs bypass the intended 300/120-character inference limits, undermining the long-form chunking contract. No claim of measured runtime cost is made.",
+      "recommendation": "Split overlong sentences at words then at bounded character positions when no whitespace is available; cover Japanese sentence punctuation. Apply the same behavior to the SDK helper.",
+      "validation": "Real helper.chunk_text('word '*400,max_len=300) returns [1999] as the chunk length; reproduced without loading any model.",
+      "classification": "Confirmed through the validation described below",
+      "disposition": "Act on",
+      "source_sha": "7e2804f96016a7028cb1ed627353c61c1e9dd281",
+      "source_url": "https://github.com/wwongw21/supertonic/blob/7e2804f96016a7028cb1ed627353c61c1e9dd281/py/helper.py#L418"
+    }
+  ],
+  "tests": [
+    "Examples section of HF_HUB_OFFLINE=1 /workspace/review/supertonic-venv/bin/python /workspace/review/repro_supertonic.py: one asserted padded-waveform assembly/export defect reproduced in the real Python helper with fake inference outputs; two chunks export [1,1,1,0,0,2] instead of the complete non-padding samples.",
+    "Real Python example helper chunk_text(\"word \"*400,max_len=300) produced one 1,999-character chunk; observed without model weights.",
+    "Node/browser helpers, C++ build configuration and other runtime code were inspected as described in coverage; no native/mobile/browser builds or runtime tests ran. The 86-test SDK/server result belongs only to supertonic-py."
+  ],
+  "branch": "main",
+  "limitations": [
+    "No real model inference, synthesis quality evaluation, GPU execution, browser UI, mobile app, full native-language builds or packaged release testing.",
+    "Tests use deterministic fake inference outputs and temporary user-style directories where appropriate; these reproduce control-flow/contracts rather than audio quality.",
+    "No GitHub Actions runs exist on these forks according to root's connector query; this is absent evidence, not a failing CI result.",
+    "Repository source files were not edited; test imports may generate ignored __pycache__ files."
+  ],
+  "evidence_file": "report.json",
+  "ci_observation": {
+    "repo": "supertonic",
+    "total_count": 0,
+    "runs": []
+  },
+  "inventory": {
+    "repo": "supertonic",
+    "sha": "7e2804f96016a7028cb1ed627353c61c1e9dd281",
+    "files": 115,
+    "source_exts": [
+      [
+        "",
+        23
+      ],
+      [
+        ".png",
+        14
+      ],
+      [
+        ".md",
+        12
+      ],
+      [
+        ".swift",
+        12
+      ],
+      [
+        ".xcconfig",
+        6
+      ],
+      [
+        ".js",
+        5
+      ],
+      [
+        ".lock",
+        3
+      ]
+    ],
+    "tests": 1,
+    "ci": []
+  },
+  "handoff": {
+    "schema_version": 1,
+    "review_date": "2026-10-22",
+    "owner": "wwongw21",
+    "handoff_status": "All findings OPEN; repairs and acceptance checks are PROPOSED. No implementation was performed.",
+    "audience": [
+      "Maintainer implementing corrections",
+      "Reviewer checking behavior, preservation of user data and release readiness"
+    ],
+    "evidence_boundary": "Source at the pinned commit, recorded lightweight tests and focused bug reproductions. Fake inference does not establish real synthesis quality or native runtime compatibility.",
+    "authorization_boundary": "This handoff describes proposed changes only. Source repositories and remote services were not modified.",
+    "evidence_artifacts": [
+      "/workspace/review/supertonic.json",
+      "/workspace/review/repro_supertonic.py"
+    ],
+    "environment": {
+      "execution": "Linux managed cloud environment",
+      "recorded_dependency_versions": {
+        "python": "3.12.14",
+        "numpy": "2.3.5",
+        "pytest": "9.1.1",
+        "onnxruntime": "1.31.0",
+        "soundfile": "0.14.0",
+        "huggingface-hub": "2.2.0",
+        "fastapi": "0.141.1",
+        "pydantic": "2.13.4",
+        "python-multipart": "0.0.32",
+        "httpx": "0.28.1"
+      },
+      "versions_note": "Versions read from the isolated verification environment; no project dependency manifest or lock file changed."
+    },
+    "setup": {
+      "working_directory": "/workspace",
+      "commands": [
+        "python -m venv --system-site-packages /workspace/review/supertonic-venv",
+        "/workspace/review/supertonic-venv/bin/pip install pytest onnxruntime soundfile huggingface-hub python-multipart -q"
+      ],
+      "status": "RAN during original review; do not rerun to claim additional coverage.",
+      "model_requirement": "The focused reproducer needs both local repositories at their pinned commits but downloads no model. The offline SDK unit selection also downloads no model."
+    },
+    "repository": "supertonic",
+    "repository_url": "https://github.com/wwongw21/supertonic",
+    "branch": "main",
+    "reviewed_sha": "7e2804f96016a7028cb1ed627353c61c1e9dd281",
+    "source_directory": "/workspace/repos/supertonic",
+    "desired_outcome": "Preserve the complete ending and intended pauses of multi-chunk audio exports, and enforce the Python example's configured text chunk limit without losing or reordering text.",
+    "coverage": "Python and Node/browser ONNX helpers and example entry points, C++ helper/build configuration, Rust CLI and helper review, language-package manifests, top-level cross-language test script; remaining mobile/native language implementations sampled. No AGENTS.md present.",
+    "architecture": {
+      "runtime_flow": "Each language example loads external model assets from assets/onnx and preset style JSONs, normalizes text, predicts duration, encodes text, generates denoising latents and vocodes audio. Long-form helpers split text and concatenate chunk waveforms; CLI/UI code then exports WAV using the reported duration.",
+      "components": [
+        {
+          "component": "Python reference example",
+          "files": [
+            "py/helper.py",
+            "py/example_onnx.py",
+            "py/requirements.txt",
+            "py/uv.lock"
+          ],
+          "role": "ONNX inference orchestration, text processing and chunking, long-form concatenation, batch entry point and WAV export."
+        },
+        {
+          "component": "Node.js and browser examples",
+          "files": [
+            "nodejs/helper.js",
+            "nodejs/example_onnx.js",
+            "web/helper.js",
+            "web/main.js",
+            "nodejs/package.json",
+            "web/package.json"
+          ],
+          "role": "Equivalent local/browser runtime helpers and export/UI; source shows the same full-waveform concatenation versus summed-duration pattern."
+        },
+        {
+          "component": "Native/mobile examples",
+          "files": [
+            "cpp/helper.cpp",
+            "cpp/CMakeLists.txt",
+            "rust/src/helper.rs",
+            "rust/src/example_onnx.rs",
+            "java/Helper.java",
+            "csharp/Helper.cs",
+            "go/helper.go",
+            "swift/Sources/Helper.swift",
+            "flutter/lib/helper.dart",
+            "ios/ExampleiOSApp/TTSService.swift"
+          ],
+          "role": "Separate platform ports with their own dependency/runtime and lifetime details. Source sampling is not a full build or parity certification."
+        },
+        {
+          "component": "Cross-language smoke runner",
+          "files": [
+            "test_all.sh",
+            "README.md"
+          ],
+          "role": "Interactive inference script and model/toolchain instructions. The script needs external model assets and multiple native runtimes; it was not run."
+        }
+      ],
+      "contracts_to_preserve": [
+        "Existing language-specific CLI flags, model/style input formats and CPU default.",
+        "Single-speaker output and batch row ordering; a single flattened batch array must not mix speaker samples.",
+        "Silence is inserted between chunks only, at the requested sample count.",
+        "Reported duration must agree with actual exported sample count within rounding tolerance.",
+        "The examples repository is independent of the supertonic-py package; SDK test counts are not evidence of example correctness."
+      ]
+    },
+    "current_mitigations_and_limits": [
+      {
+        "mitigation": "Synthesize bounded chunks separately, trim each generated chunk to its own duration and concatenate the trimmed audio with the desired pauses in the caller.",
+        "addresses": [
+          "STON-1"
+        ],
+        "limit": "Simply increasing the final reported duration preserves the ending but retains padding gaps; it does not repair timing consistently."
+      },
+      {
+        "mitigation": "Pre-split text into passages shorter than the configured language limit, including Japanese paragraphs without spaces.",
+        "addresses": [
+          "STON-2"
+        ],
+        "limit": "Caller workaround only. Preserve punctuation/expression tags and validate the final joined speech manually."
+      }
+    ],
+    "implementation_sequence": [
+      {
+        "order": 1,
+        "findings": [
+          "STON-1"
+        ],
+        "depends_on": [],
+        "deliverable": "Model-free padded-waveform regression; per-chunk trimming and sample-derived output duration in Python. Preserve batch behavior."
+      },
+      {
+        "order": 2,
+        "findings": [
+          "STON-2"
+        ],
+        "depends_on": [],
+        "deliverable": "Bounded chunking regressions and a fallback split policy for long sentences/words and Japanese text."
+      },
+      {
+        "order": 3,
+        "findings": [
+          "STON-1"
+        ],
+        "depends_on": [
+          1
+        ],
+        "deliverable": "Audit Node/browser and native ports against the accepted sample-count contract; apply equivalent corrections only where the defect is confirmed."
+      },
+      {
+        "order": 4,
+        "findings": [
+          "STON-1",
+          "STON-2"
+        ],
+        "depends_on": [
+          1,
+          2,
+          3
+        ],
+        "deliverable": "Real model long-form audio acceptance and per-runtime build/run checks. All remain NOT RUN."
+      }
+    ],
+    "tests_and_reproductions": [
+      {
+        "name": "Combined bug demonstrator, examples section",
+        "working_directory": "/workspace",
+        "command": "HF_HUB_OFFLINE=1 /workspace/review/supertonic-venv/bin/python /workspace/review/repro_supertonic.py",
+        "prerequisites": "Both local repositories at pinned paths; isolated Python environment with numpy and onnxruntime. The combined script also imports SDK FastAPI/soundfile dependencies. No model weights needed.",
+        "actual_result": "EXIT 0. Real helper with fake inference returns [[1,1,1,0,0,2,2,2,0,0]]; existing final-duration export produces [1,1,1,0,0,2], losing two nonzero ending samples. Example chunker prints [1999] for max_len=300.",
+        "proves": "An asserted padding/concatenation/export control-flow failure and a measured chunk-length contract failure.",
+        "does_not_prove": "Real model acoustic quality, actual vocoder output padding distribution, native runtime correctness or browser/mobile behavior.",
+        "after_repair": "The original truncation assertion encodes the bug and should fail after a correct repair. Replace it with exact complete-sample expectations and sample/duration consistency."
+      }
+    ],
+    "test_attribution": "No standalone supertonic examples test suite was run. The 86 passing SDK/server tests belong exclusively to supertonic-py, not this repository.",
+    "remaining_acceptance_not_run": [
+      {
+        "status": "NOT RUN",
+        "scenario": "Python model-free regression suite for padding, durations and text preservation after repair.",
+        "prerequisites": "Fixed code and new tests; no weights required."
+      },
+      {
+        "status": "NOT RUN",
+        "scenario": "Real Python ONNX single-chunk, multi-chunk and batch synthesis using downloaded Supertone/supertonic-3 assets. Check final word, pause lengths and sample count.",
+        "suggested_command": "From /workspace/repos/supertonic/py: uv run example_onnx.py --n-test 1 --lang en --text \"A bounded first sentence. A bounded second sentence.\" --save-dir /workspace/review/supertonic-real-output",
+        "prerequisites": "uv/Python, declared dependencies, real ONNX and voice files in ../assets. To exercise chunk boundaries, use a controlled passage longer than 300 characters or explicit paragraphs."
+      },
+      {
+        "status": "NOT RUN",
+        "scenario": "Node.js and browser real model smoke and playback checks after mirrored padding repair.",
+        "suggested_commands": [
+          "From nodejs: npm install && npm start",
+          "From web: npm install && npm run build; then run dev/preview and inspect actual synthesis in a browser."
+        ],
+        "prerequisites": "Node/npm, declared ONNX runtime packages and configured model assets. Commands are examples for future acceptance, not prior results."
+      },
+      {
+        "status": "NOT RUN",
+        "scenario": "Build and execute C++, Rust, Go, Java, C#, Swift, iOS and Flutter implementations for single/batch/long-form parity.",
+        "prerequisites": "Platform-specific native runtimes and model assets; iOS/macOS/mobile checks require appropriate SDKs/devices."
+      },
+      {
+        "status": "NOT RUN",
+        "scenario": "Interactive cross-language inference runner.",
+        "suggested_command": "From /workspace/repos/supertonic: bash test_all.sh; select mode 4 and decline deletion of results unless working in a disposable copy.",
+        "prerequisites": "All toolchains/model assets and enough time/storage. Inspect its prompted cleanup behavior before selecting an option."
+      }
+    ],
+    "operational_notes": [
+      "The upstream archive/support notice in README.md means this fork should decide who owns compatibility fixes and model-asset availability; no external support availability was verified.",
+      "All native/mobile/browser acceptance is explicitly unexecuted.",
+      "Root recorded no Actions runs on this fork; absence of runs does not establish pass/fail."
+    ],
+    "findings": [
+      {
+        "id": "STON-1",
+        "severity": "Medium",
+        "title": "Long-form output trims off the end after concatenating padded chunks",
+        "file": "py/helper.py",
+        "lines": [
+          234,
+          243
+        ],
+        "evidence": "TextToSpeech.__call__ concatenates full vocoder waveforms while adding only predicted durations. sample_noisy_latent rounds each latent length up to a chunk boundary (helper.py:165-169), and _infer returns wav unchanged. example_onnx.py:113 then trims the concatenated waveform to the sum of predicted durations. Internal padding remains in the middle, so the final trim removes audio from later chunks. Node and browser helpers have the same concatenate/sum-duration structure (nodejs/helper.js:289-299; web/helper.js:287-297).",
+        "impact": "Multi-chunk long-form exports contain extra gaps at chunk boundaries and lose the final portion of the synthesized passage as accumulated padding grows. Single-chunk output is unaffected by this particular bug.",
+        "recommendation": "Trim each individual waveform to its actual/predicted sample count before concatenating; compute the combined duration from the final concatenated sample count. Preserve independently trimmed rows for batched outputs.",
+        "validation": "Confirmed orchestration using the real Python helper with _infer replaced by deterministic padded outputs: two chunks [1,1,1,0,0] and [2,2,2,0,0], each with duration 0.3 s at 10 Hz, export as [1,1,1,0,0,2], losing the last two nonzero samples. No real ONNX model was run; the test proves padding/concatenation/trim behavior.",
+        "status": "OPEN — proposed repair, not implemented",
+        "classification": "Confirmed control-flow defect with deterministic padded inference outputs; real model audio effect not directly exercised",
+        "locations": [
+          {
+            "file": "py/helper.py",
+            "lines": [
+              234,
+              243
+            ],
+            "url": "https://github.com/wwongw21/supertonic/blob/7e2804f96016a7028cb1ed627353c61c1e9dd281/py/helper.py#L234"
+          }
+        ],
+        "change_surface": [
+          "py/helper.py: TextToSpeech.__call__, _infer sample/duration contract",
+          "py/example_onnx.py: final export trim",
+          "nodejs/helper.js: call and nodejs/example_onnx.js export parity",
+          "web/helper.js: call and export parity",
+          "Native/mobile helpers only after source-specific confirmation"
+        ],
+        "repair_steps": [
+          "Add the recorded two-padded-chunk fixture as a regression using the real helper and deterministic _infer outputs. Include explicit nonzero markers in the final chunk so truncation is observable without playback.",
+          "Before concatenation, trim each waveform row to its own predicted/accepted sample count, clamped to actual available samples and using one explicit rounding rule.",
+          "Insert exactly the requested silence sample count between chunks. Sum actual sample counts after trimming/concatenation and derive the returned duration from that total.",
+          "Keep the batch path independently aware of each row's duration and padded row stride; do not flatten multiple speakers into one untrimmed long-form stream.",
+          "Check exporters for a redundant final trim and ensure it cannot remove another chunk's real samples because of floating-point rounding.",
+          "Port the accepted sample-count contract to Node/browser helpers that show the same pattern, and audit each native port independently. Add runtime-specific tests rather than claiming Python fixtures validate all ports."
+        ],
+        "invariants": [
+          "Every intended non-padding sample from every chunk is emitted in order.",
+          "No vocoder padding is retained between chunks as unintended silence.",
+          "A final export trim does not cut later audio to compensate for earlier padding.",
+          "Returned duration matches the output sample count divided by sample_rate within one sample.",
+          "Batch row/speaker ordering and single-chunk output remain correct."
+        ],
+        "acceptance_criteria": [
+          "Recorded fake chunks export as [1,1,1,2,2,2] at zero added silence, not [1,1,1,0,0,2].",
+          "With nonzero silence, output contains exactly the configured zero samples between complete chunks.",
+          "Different padding amounts across 3+ chunks do not change the final nonzero ending.",
+          "Duration/sample count agrees for odd sample counts and fractional predicted durations.",
+          "Real long-form speech retains the final word and expected pauses; this acoustic check remains NOT RUN."
+        ],
+        "regression_scenarios": [
+          "One chunk without padding",
+          "One chunk with padding",
+          "Two and many chunks with different pad lengths",
+          "Zero and nonzero configured silence",
+          "Sample-rate rounding and fractional durations",
+          "Predicted length exceeds available waveform; clamp or explicit error policy",
+          "Batch rows of unequal duration",
+          "English, Japanese/Korean chunk sizes and empty text behavior"
+        ],
+        "risks": [
+          "Trimming on predicted duration may expose off-by-one errors; use a single sample-count rule and clamp explicitly.",
+          "Duration predictions can differ from acoustically useful waveform tails; real speech listening must validate the chosen trim policy.",
+          "More than one platform repeats this algorithm; a Python-only repair does not establish native/browser parity."
+        ],
+        "rollback": "Retain pre-change generated output for comparison and revert only the concatenation/export correction if it corrupts sample ordering. Until repaired, synthesize/trim separate chunks outside the helper. No persisted schema migration is required.",
+        "repair_validation_status": "NOT RUN — no source edits, fixed-code tests or real audio acceptance."
+      },
+      {
+        "id": "STON-2",
+        "severity": "Medium",
+        "title": "The Python example does not enforce its maximum chunk length",
+        "file": "py/helper.py",
+        "lines": [
+          418,
+          427
+        ],
+        "evidence": "An overlong sentence is assigned unchanged to current_chunk; there is no word/character fallback. ASCII-only sentence boundary detection also misses Japanese punctuation.",
+        "impact": "Unpunctuated long passages and Japanese paragraphs bypass the intended 300/120-character inference limits, undermining the long-form chunking contract. No claim of measured runtime cost is made.",
+        "recommendation": "Split overlong sentences at words then at bounded character positions when no whitespace is available; cover Japanese sentence punctuation. Apply the same behavior to the SDK helper.",
+        "validation": "Real helper.chunk_text('word '*400,max_len=300) returns [1999] as the chunk length; reproduced without loading any model.",
+        "status": "OPEN — proposed repair, not implemented",
+        "classification": "Confirmed at reviewed revision",
+        "locations": [
+          {
+            "file": "py/helper.py",
+            "lines": [
+              418,
+              427
+            ],
+            "url": "https://github.com/wwongw21/supertonic/blob/7e2804f96016a7028cb1ed627353c61c1e9dd281/py/helper.py#L418"
+          }
+        ],
+        "change_surface": [
+          "py/helper.py: chunk_text",
+          "py/helper.py: TextToSpeech.__call__",
+          "Model-free Python helper regression harness under a test location chosen by the maintainer",
+          "Other language helper chunkers only after auditing their own behavior"
+        ],
+        "repair_steps": [
+          "Define maximum length over Python Unicode characters and preserve the existing paragraph/sentence ordering and abbreviation rules.",
+          "For a sentence longer than max_len, split at available whitespace boundaries; if an individual span still exceeds the limit, split it by bounded character positions.",
+          "Recognize common Unicode sentence punctuation so Japanese text can retain useful boundaries; hard fallback must still enforce the maximum when punctuation/whitespace is absent.",
+          "Return nonempty bounded chunks without dropping, reordering or duplicating input text. Preserve the documented whitespace-normalization behavior.",
+          "Add regressions for unpunctuated words, one long word, Japanese text without spaces, Korean text, abbreviations and exact limits. Coordinate behavior with the sibling Python implementation without introducing a cross-repository runtime dependency."
+        ],
+        "invariants": [
+          "Every returned chunk is nonempty and has len(chunk) <= configured max_len.",
+          "Original meaningful characters retain order and are emitted exactly once.",
+          "Empty/whitespace input and existing sentence/paragraph behavior remain defined.",
+          "Minimum-limit validation remains consistent with the public SDK or example contract."
+        ],
+        "acceptance_criteria": [
+          "chunk_text('word '*400,max_len=300) returns multiple chunks, all <=300, instead of [1999].",
+          "A Japanese passage longer than 120 characters with no ASCII whitespace yields bounded chunks while preserving all characters.",
+          "One token longer than the limit is split safely and recombines to the original token.",
+          "Existing abbreviation and paragraph tests remain green."
+        ],
+        "regression_scenarios": [
+          "Input length max_len-1/max_len/max_len+1",
+          "One very long word and one long sentence",
+          "Japanese 。！？ punctuation without following spaces",
+          "Korean decomposed/combined characters",
+          "Emoji, combining marks and expression-tag text",
+          "Empty input, repeated whitespace, paragraphs and common abbreviations"
+        ],
+        "risks": [
+          "A strict character fallback may split a grapheme cluster or expression tag, affecting synthesis quality. Prefer safe text boundaries while maintaining a real length bound; define behavior for indivisible tokens explicitly.",
+          "More chunks add pauses and inference overhead. Exact memory/latency improvements and audio quality have not been measured."
+        ],
+        "rollback": "Revert the chunker change if it drops text or materially degrades speech; clients can pre-split bounded passages temporarily. No data format migration is required.",
+        "repair_validation_status": "NOT RUN — only the current oversized result was observed; no repair or fixed regression suite has run."
+      }
+    ],
+    "all_findings_open": true,
+    "implementation_performed": false
+  },
+  "handoff_date": "2026-10-22",
+  "all_findings_status": "OPEN",
+  "implementation_status": "No repairs applied; proposed work only.",
+  "delivery_notes": {
+    "destination_repository": "wwongw21/supertonic",
+    "status": "All findings remain OPEN; documentation transfer only.",
+    "portable_evidence": "This JSON retains the complete repository-specific handoff. Historical /workspace paths are evidence references and prerequisites, not portable hyperlinks. Applicable repository-specific diagnostics are included alongside the report.",
+    "diagnostics_included": [],
+    "not_included": "Original environments, model weights, user data and complete source snapshots are not included. Clone the pinned source and follow the recorded prerequisites. Bug-demonstration scripts intentionally assert pre-fix behavior; they are not a post-fix passing suite.",
+    "combined_probe": "The historical repro_supertonic.py depends on both public Supertonic checkouts. It is not included as a repository-specific diagnostic; the report records the original results and the regression scenarios to implement."
+  }
+}
