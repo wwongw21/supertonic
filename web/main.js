@@ -210,8 +210,7 @@ async function generateSpeech() {
         console.log(`Text-to-speech synthesis: ${((toc - tic) / 1000).toFixed(2)}s`);
         
         showStatus('ℹ️ <strong>Creating audio file...</strong>');
-        const wavLen = Math.floor(textToSpeech.sampleRate * duration[0]);
-        const wavOut = wav.slice(0, wavLen);
+        const wavOut = wav;
         
         // Create WAV file
         const wavBuffer = writeWavFile(wavOut, textToSpeech.sampleRate);

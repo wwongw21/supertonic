@@ -800,6 +800,17 @@ func (tts *TextToSpeech) _infer(textList []string, langList []string, style *Sty
 
 // Call synthesizes speech from a single text with automatic chunking
 func (tts *TextToSpeech) Call(text string, lang string, style *Style, totalStep int, speed float32, silenceDuration float32) ([]float32, float32, error) {
+	if math.IsNaN(float64(silenceDuration)) || math.IsInf(float64(silenceDuration), 0) || silenceDuration < 0 {
+		return nil, 0, fmt.Errorf("silence duration must be finite and nonnegative")
+	}
+	if tts.SampleRate <= 0 {
+		return nil, 0, fmt.Errorf("sample rate must be positive")
+	}
+	silenceSamples := math.Floor(float64(silenceDuration) * float64(tts.SampleRate))
+	if silenceSamples > float64(int(^uint(0)>>1)) {
+		return nil, 0, fmt.Errorf("silence duration is too large")
+	}
+	silenceLen := int(silenceSamples)
 	maxLen := 300
 	if lang == "ko" || lang == "ja" {
 		maxLen = 120
@@ -807,7 +818,6 @@ func (tts *TextToSpeech) Call(text string, lang string, style *Style, totalStep 
 	chunks := chunkText(text, maxLen)
 	
 	var wavCat []float32
-	var durCat float32
 
 	for i, chunk := range chunks {
 		wav, duration, err := tts._infer([]string{chunk}, []string{lang}, style, totalStep, speed)
@@ -816,22 +826,31 @@ func (tts *TextToSpeech) Call(text string, lang string, style *Style, totalStep 
 		}
 
 		dur := duration[0]
-		wavLen := int(float32(tts.SampleRate) * dur)
+		if math.IsNaN(float64(dur)) || math.IsInf(float64(dur), 0) {
+			return nil, 0, fmt.Errorf("predicted duration must be finite")
+		}
+		predictedSamples := float64(tts.SampleRate) * float64(dur)
+		wavLen := 0
+		if predictedSamples > 0 {
+			if predictedSamples >= float64(len(wav)) {
+				wavLen = len(wav)
+			} else {
+				wavLen = int(predictedSamples)
+			}
+		}
 		wavChunk := wav[:wavLen]
 
 		if i == 0 {
 			wavCat = wavChunk
-			durCat = dur
 		} else {
-			silenceLen := int(silenceDuration * float32(tts.SampleRate))
 			silence := make([]float32, silenceLen)
 			
 			wavCat = append(wavCat, silence...)
 			wavCat = append(wavCat, wavChunk...)
-			durCat += silenceDuration + dur
 		}
 	}
 
+	durCat := float32(len(wavCat)) / float32(tts.SampleRate)
 	return wavCat, durCat, nil
 }
 
@@ -967,14 +986,16 @@ func sanitizeFilename(text string, maxLen int) string {
 
 // extractWavSegment extracts a single audio segment from batch output
 func extractWavSegment(wav []float32, duration float32, sampleRate int, index int, batchSize int) []float64 {
-	wavLen := int(float64(sampleRate) * float64(duration))
 	wavPerBatch := len(wav) / batchSize
+	wavLen := int(float64(sampleRate) * float64(duration))
+	if wavLen < 0 {
+		wavLen = 0
+	}
+	if wavLen > wavPerBatch {
+		wavLen = wavPerBatch
+	}
 	
 	wavStart := index * wavPerBatch
-	wavEnd := wavStart + wavLen
-	if wavEnd > len(wav) {
-		wavEnd = len(wav)
-	}
 	
 	wavOut := make([]float64, wavLen)
 	for j := 0; j < wavLen && wavStart+j < len(wav); j++ {

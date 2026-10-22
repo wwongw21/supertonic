@@ -285,34 +285,41 @@ class TextToSpeech {
   Future<Map<String, dynamic>> call(
       String text, String lang, Style style, int totalStep,
       {double speed = 1.05, double silenceDuration = 0.3}) async {
+    if (!silenceDuration.isFinite || silenceDuration < 0) {
+      throw ArgumentError.value(
+          silenceDuration, 'silenceDuration', 'must be finite and nonnegative');
+    }
     final maxLen = (lang == 'ko' || lang == 'ja') ? 120 : 300;
     final chunks = _chunkText(text, maxLen: maxLen);
     final langList = List.filled(chunks.length, lang);
-    List<double>? wavCat;
-    double durCat = 0;
+    final wavCat = <double>[];
+    final silenceLen = (silenceDuration * sampleRate).floor();
 
     for (var i = 0; i < chunks.length; i++) {
       final result = await _infer([chunks[i]], [langList[i]], style, totalStep,
           speed: speed);
       final wav = _safeCast<double>(result['wav']);
       final duration = _safeCast<double>(result['duration']);
-
-      if (wavCat == null) {
-        wavCat = wav;
-        durCat = duration[0];
-      } else {
-        wavCat = [
-          ...wavCat,
-          ...List<double>.filled((silenceDuration * sampleRate).floor(), 0.0),
-          ...wav
-        ];
-        durCat += duration[0] + silenceDuration;
+      final predictedDuration = duration[0];
+      if (!predictedDuration.isFinite) {
+        throw ArgumentError('Predicted duration must be finite');
       }
+      final requestedSampleCount = predictedDuration * sampleRate;
+      final sampleCount = requestedSampleCount <= 0
+          ? 0
+          : (requestedSampleCount >= wav.length
+              ? wav.length
+              : requestedSampleCount.floor());
+
+      if (i > 0) {
+        wavCat.addAll(List<double>.filled(silenceLen, 0.0));
+      }
+      wavCat.addAll(wav.take(sampleCount));
     }
 
     return {
       'wav': wavCat,
-      'duration': [durCat]
+      'duration': [wavCat.length / sampleRate]
     };
   }
 

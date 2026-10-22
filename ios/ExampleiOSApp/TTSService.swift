@@ -93,10 +93,9 @@ final class TTSService {
         let style = try loadVoiceStyle([styleURL.path], verbose: false)
 
         // 2) Synthesize via packed TextToSpeech component
-        let (wav, duration) = try textToSpeech.call(text, language.rawValue, style, nfe)
-        let audioSeconds = Double(duration)
-        let wavLenSample = min(Int(Double(sampleRate) * audioSeconds), wav.count)
-        let wavOut = Array(wav[0..<wavLenSample])
+        let (wav, _) = try textToSpeech.call(text, language.rawValue, style, nfe)
+        // call() already trims each generated chunk before joining the waveform.
+        let wavOut = wav
 
         let tmpURL = FileManager.default.temporaryDirectory.appendingPathComponent("supertonic_tts_\(UUID().uuidString).wav")
         try writeWavFile(tmpURL.path, wavOut, sampleRate)

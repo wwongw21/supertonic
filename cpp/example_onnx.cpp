@@ -101,12 +101,22 @@ int main(int argc, char* argv[]) {
         
         for (int b = 0; b < bsz; b++) {
             std::string fname = sanitizeFilename(text_list[b], 20) + "_" + std::to_string(n + 1) + ".wav";
-            int wav_len = static_cast<int>(sample_rate * result.duration[b]);
-            
-            std::vector<float> wav_out(
-                result.wav.begin() + b * wav_shape_1,
-                result.wav.begin() + b * wav_shape_1 + wav_len
-            );
+            std::vector<float> wav_out;
+            if (batch) {
+                const float predicted_samples = result.duration[b] * sample_rate;
+                const size_t wav_len = predicted_samples <= 0.0f ? 0
+                    : (predicted_samples >= wav_shape_1
+                        ? static_cast<size_t>(wav_shape_1)
+                        : static_cast<size_t>(predicted_samples));
+                const size_t wav_start = static_cast<size_t>(b) * wav_shape_1;
+                wav_out.assign(
+                    result.wav.begin() + wav_start,
+                    result.wav.begin() + wav_start + wav_len
+                );
+            } else {
+                // call() already returns per-chunk-trimmed long-form audio.
+                wav_out = result.wav;
+            }
             
             std::string output_path = save_dir + "/" + fname;
             writeWavFile(output_path, wav_out, sample_rate);

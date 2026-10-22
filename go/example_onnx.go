@@ -173,9 +173,8 @@ func main() {
 				wavOut = extractWavSegment(wav, duration[i], textToSpeech.SampleRate, i, bsz)
 			} else {
 				// For non-batch mode, wav is a single concatenated audio
-				wavLen := int(float32(textToSpeech.SampleRate) * duration[0])
-				wavOut = make([]float64, wavLen)
-				for j := 0; j < wavLen && j < len(wav); j++ {
+				wavOut = make([]float64, len(wav))
+				for j := range wav {
 					wavOut[j] = float64(wav[j])
 				}
 			}

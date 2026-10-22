@@ -688,33 +688,37 @@ impl TextToSpeech {
         speed: f32,
         silence_duration: f32,
     ) -> Result<(Vec<f32>, f32)> {
+        if !silence_duration.is_finite() || silence_duration < 0.0 {
+            bail!("silence duration must be finite and nonnegative");
+        }
         let max_len = if lang == "ko" || lang == "ja" { 120 } else { 300 };
         let chunks = chunk_text(text, Some(max_len));
         
         let mut wav_cat: Vec<f32> = Vec::new();
-        let mut dur_cat: f32 = 0.0;
 
         for (i, chunk) in chunks.iter().enumerate() {
             let (wav, duration) = self._infer(&[chunk.clone()], &[lang.to_string()], style, total_step, speed)?;
             
             let dur = duration[0];
-            let wav_len = (self.sample_rate as f32 * dur) as usize;
+            if !dur.is_finite() {
+                bail!("predicted duration must be finite");
+            }
+            let wav_len = (self.sample_rate as f32 * dur).max(0.0) as usize;
             let wav_chunk = &wav[..wav_len.min(wav.len())];
 
             if i == 0 {
                 wav_cat.extend_from_slice(wav_chunk);
-                dur_cat = dur;
             } else {
-                let silence_len = (silence_duration * self.sample_rate as f32) as usize;
+                let silence_len = (silence_duration * self.sample_rate as f32).floor() as usize;
                 let silence = vec![0.0f32; silence_len];
                 
                 wav_cat.extend_from_slice(&silence);
                 wav_cat.extend_from_slice(wav_chunk);
-                dur_cat += silence_duration + dur;
             }
         }
 
-        Ok((wav_cat, dur_cat))
+        let duration = wav_cat.len() as f32 / self.sample_rate as f32;
+        Ok((wav_cat, duration))
     }
 
     pub fn batch(

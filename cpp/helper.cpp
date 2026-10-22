@@ -3,9 +3,11 @@
 #include <iostream>
 #include <cmath>
 #include <algorithm>
+#include <limits>
 #include <random>
 #include <sstream>
 #include <regex>
+#include <stdexcept>
 #include <unordered_map>
 #include <nlohmann/json.hpp>
 
@@ -694,30 +696,49 @@ TextToSpeech::SynthesisResult TextToSpeech::call(
     if (style.getTtlShape()[0] != 1) {
         throw std::runtime_error("Single speaker text to speech only supports single style");
     }
+    if (!std::isfinite(silence_duration) || silence_duration < 0.0f) {
+        throw std::invalid_argument("silence duration must be finite and nonnegative");
+    }
     
     int max_len = (lang == "ko" || lang == "ja") ? 120 : 300;
     auto text_list = chunkText(text, max_len);
     std::vector<float> wav_cat;
-    float dur_cat = 0.0f;
+    const double silence_samples = static_cast<double>(silence_duration) * sample_rate_;
+    if (!std::isfinite(silence_samples)
+        || silence_samples > static_cast<double>(std::numeric_limits<size_t>::max())) {
+        throw std::invalid_argument("silence duration is too large");
+    }
+    const size_t silence_len = static_cast<size_t>(silence_samples);
     
-    for (const auto& chunk : text_list) {
+    for (size_t chunk_index = 0; chunk_index < text_list.size(); ++chunk_index) {
+        const auto& chunk = text_list[chunk_index];
         auto result = _infer(memory_info, {chunk}, {lang}, style, total_step, speed);
-        
-        if (wav_cat.empty()) {
-            wav_cat = result.wav;
-            dur_cat = result.duration[0];
-        } else {
-            int silence_len = static_cast<int>(silence_duration * sample_rate_);
-            std::vector<float> silence(silence_len, 0.0f);
-            wav_cat.insert(wav_cat.end(), silence.begin(), silence.end());
-            wav_cat.insert(wav_cat.end(), result.wav.begin(), result.wav.end());
-            dur_cat += result.duration[0] + silence_duration;
+
+        const float predicted_duration = result.duration[0];
+        if (!std::isfinite(predicted_duration)) {
+            throw std::invalid_argument("predicted duration must be finite");
         }
+        const float predicted_samples = predicted_duration * sample_rate_;
+        size_t sample_count = 0;
+        if (predicted_samples > 0.0f) {
+            sample_count = predicted_samples >= static_cast<float>(result.wav.size())
+                ? result.wav.size()
+                : static_cast<size_t>(predicted_samples);
+        }
+
+        if (chunk_index > 0) {
+            wav_cat.insert(wav_cat.end(), silence_len, 0.0f);
+        }
+        wav_cat.insert(
+            wav_cat.end(), result.wav.begin(), result.wav.begin() + sample_count
+        );
     }
     
     SynthesisResult final_result;
     final_result.wav = wav_cat;
-    final_result.duration = {dur_cat};
+    final_result.duration = {
+        static_cast<float>(wav_cat.size()) / static_cast<float>(sample_rate_)
+    };
     
     return final_result;
 }

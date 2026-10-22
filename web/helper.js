@@ -272,27 +272,38 @@ export class TextToSpeech {
         if (style.ttl.dims[0] !== 1) {
             throw new Error('Single speaker text to speech only supports single style');
         }
+        if (!Number.isFinite(silenceDuration) || silenceDuration < 0) {
+            throw new RangeError('silenceDuration must be finite and nonnegative');
+        }
         const maxLen = (lang === 'ko' || lang === 'ja') ? 120 : 300;
         const textList = chunkText(text, maxLen);
         const langList = new Array(textList.length).fill(lang);
-        let wavCat = [];
-        let durCat = 0;
+        const wavCat = [];
+        const silenceLen = Math.floor(silenceDuration * this.sampleRate);
         
         for (let i = 0; i < textList.length; i++) {
             const { wav, duration } = await this._infer([textList[i]], [langList[i]], style, totalStep, speed, progressCallback);
-            
-            if (wavCat.length === 0) {
-                wavCat = wav;
-                durCat = duration[0];
-            } else {
-                const silenceLen = Math.floor(silenceDuration * this.sampleRate);
-                const silence = new Array(silenceLen).fill(0);
-                wavCat = [...wavCat, ...silence, ...wav];
-                durCat += duration[0] + silenceDuration;
+            const predictedDuration = duration[0];
+            if (!Number.isFinite(predictedDuration)) {
+                throw new RangeError('predicted duration must be finite');
+            }
+
+            const requestedSampleCount = predictedDuration * this.sampleRate;
+            const sampleCount = requestedSampleCount <= 0
+                ? 0
+                : (requestedSampleCount >= wav.length
+                    ? wav.length : Math.floor(requestedSampleCount));
+            if (i > 0) {
+                for (let sample = 0; sample < silenceLen; sample++) {
+                    wavCat.push(0);
+                }
+            }
+            for (let sample = 0; sample < sampleCount; sample++) {
+                wavCat.push(wav[sample]);
             }
         }
         
-        return { wav: wavCat, duration: [durCat] };
+        return { wav: wavCat, duration: [wavCat.length / this.sampleRate] };
     }
 
     async batch(textList, langList, style, totalStep, speed = 1.05, progressCallback = null) {

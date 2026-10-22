@@ -100,8 +100,14 @@ async function main() {
         const wavShape = [bsz, wav.length / bsz];
         for (let b = 0; b < bsz; b++) {
             const fname = `${sanitizeFilename(textList[b], 20)}_${n + 1}.wav`;
-            const wavLen = Math.floor(textToSpeech.sampleRate * duration[b]);
-            const wavOut = wav.slice(b * wavShape[1], b * wavShape[1] + wavLen);
+            let wavOut = wav;
+            if (batch) {
+                const wavLen = Math.min(
+                    wavShape[1],
+                    Math.max(0, Math.floor(textToSpeech.sampleRate * duration[b]))
+                );
+                wavOut = wav.slice(b * wavShape[1], b * wavShape[1] + wavLen);
+            }
             
             const outputPath = path.join(saveDir, fname);
             writeWavFile(outputPath, wavOut, textToSpeech.sampleRate);
