@@ -450,34 +450,40 @@ class TextToSpeech {
      */
     public TTSResult call(String text, String lang, Style style, int totalStep, float speed, float silenceDuration, OrtEnvironment env) 
             throws OrtException {
+        if (!Float.isFinite(silenceDuration) || silenceDuration < 0.0f) {
+            throw new IllegalArgumentException("silence duration must be finite and nonnegative");
+        }
         int maxLen = (lang.equals("ko") || lang.equals("ja")) ? 120 : 300;
         List<String> chunks = Helper.chunkText(text, maxLen);
         
         List<Float> wavCat = new ArrayList<>();
-        float durCat = 0.0f;
+        int silenceLen = (int) (silenceDuration * sampleRate);
         
         for (int i = 0; i < chunks.size(); i++) {
             TTSResult result = _infer(Arrays.asList(chunks.get(i)), Arrays.asList(lang), style, totalStep, speed, env);
             
             float dur = result.duration[0];
-            int wavLen = (int) (sampleRate * dur);
+            if (!Float.isFinite(dur)) {
+                throw new IllegalArgumentException("predicted duration must be finite");
+            }
+            float predictedSamples = sampleRate * dur;
+            int wavLen = predictedSamples <= 0.0f ? 0
+                : (predictedSamples >= result.wav.length
+                    ? result.wav.length : (int) predictedSamples);
             float[] wavChunk = new float[wavLen];
-            System.arraycopy(result.wav, 0, wavChunk, 0, Math.min(wavLen, result.wav.length));
+            System.arraycopy(result.wav, 0, wavChunk, 0, wavLen);
             
             if (i == 0) {
                 for (float val : wavChunk) {
                     wavCat.add(val);
                 }
-                durCat = dur;
             } else {
-                int silenceLen = (int) (silenceDuration * sampleRate);
                 for (int j = 0; j < silenceLen; j++) {
                     wavCat.add(0.0f);
                 }
                 for (float val : wavChunk) {
                     wavCat.add(val);
                 }
-                durCat += silenceDuration + dur;
             }
         }
         
@@ -486,7 +492,7 @@ class TextToSpeech {
             wavArray[i] = wavCat.get(i);
         }
         
-        return new TTSResult(wavArray, new float[]{durCat});
+        return new TTSResult(wavArray, new float[]{(float) wavArray.length / sampleRate});
     }
     
     /**

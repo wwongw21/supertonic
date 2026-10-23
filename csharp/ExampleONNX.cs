@@ -123,9 +123,20 @@ namespace Supertonic
                 {
                     string fname = $"{Helper.SanitizeFilename(textList[b], 20)}_{n + 1}.wav";
                     
-                    int wavLen = (int)(textToSpeech.SampleRate * duration[b]);
-                    var wavOut = new float[wavLen];
-                    Array.Copy(wav, b * wav.Length / bsz, wavOut, 0, Math.Min(wavLen, wav.Length / bsz));
+                    float[] wavOut;
+                    if (batch)
+                    {
+                        int wavLen = wav.Length / bsz;
+                        int sampleCount = Math.Max(0, (int)(textToSpeech.SampleRate * duration[b]));
+                        sampleCount = Math.Min(sampleCount, wavLen);
+                        wavOut = new float[sampleCount];
+                        Array.Copy(wav, b * wavLen, wavOut, 0, sampleCount);
+                    }
+                    else
+                    {
+                        // Call() already returns per-chunk-trimmed long-form audio.
+                        wavOut = wav;
+                    }
 
                     string outputPath = Path.Combine(saveDir, fname);
                     Helper.WriteWavFile(outputPath, wavOut, textToSpeech.SampleRate);

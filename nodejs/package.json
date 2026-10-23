@@ -5,7 +5,8 @@
   "main": "example_onnx.js",
   "type": "module",
   "scripts": {
-    "start": "node example_onnx.js"
+    "start": "node example_onnx.js",
+    "test": "node --experimental-loader ../tests/ort-loader.mjs --test helper.test.js"
   },
   "keywords": [
     "tts",

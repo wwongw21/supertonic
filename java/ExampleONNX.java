@@ -152,14 +152,13 @@ public class ExampleONNX {
                     
                     if (batch) {
                         int wavLen = wav.length / bsz;
-                        int actualLen = (int) (textToSpeech.sampleRate * duration[i]);
+                        int actualLen = Math.max(0, (int) (textToSpeech.sampleRate * duration[i]));
+                        actualLen = Math.min(actualLen, wavLen);
                         wavOut = new float[actualLen];
                         System.arraycopy(wav, i * wavLen, wavOut, 0, Math.min(actualLen, wavLen));
                     } else {
-                        // For non-batch mode, wav is a single concatenated audio
-                        int actualLen = (int) (textToSpeech.sampleRate * duration[0]);
-                        wavOut = new float[Math.min(actualLen, wav.length)];
-                        System.arraycopy(wav, 0, wavOut, 0, wavOut.length);
+                        // call() already returns per-chunk-trimmed long-form audio.
+                        wavOut = wav;
                     }
                     
                     String outputPath = saveDir + "/" + fname;

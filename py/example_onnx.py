@@ -110,7 +110,22 @@ for n in range(n_test):
         os.makedirs(save_dir)
     for b in range(bsz):
         fname = f"{sanitize_filename(text_list[b], 20)}_{n+1}.wav"
-        w = wav[b, : int(text_to_speech.sample_rate * duration[b].item())]  # [T_trim]
+        if batch:
+            wav_len = min(
+                wav.shape[1],
+                max(
+                    0,
+                    int(
+                        (
+                            duration[b : b + 1] * text_to_speech.sample_rate
+                        ).astype("int64")[0]
+                    ),
+                ),
+            )
+            w = wav[b, :wav_len]
+        else:
+            # Long-form call() already trims each chunk before concatenation.
+            w = wav[b]
         sf.write(os.path.join(save_dir, fname), w, text_to_speech.sample_rate)
         print(f"Saved: {save_dir}/{fname}")
 print("\n=== Synthesis completed successfully! ===")

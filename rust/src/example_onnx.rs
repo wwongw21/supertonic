@@ -116,14 +116,14 @@ fn main() -> Result<()> {
             let fname = format!("{}_{}.wav", sanitize_filename(&text_list[i], 20), n + 1);
             let wav_slice = if batch {
                 let wav_len = wav.len() / bsz;
-                let actual_len = (text_to_speech.sample_rate as f32 * duration[i]) as usize;
+                let actual_len = (text_to_speech.sample_rate as f32 * duration[i])
+                    .max(0.0) as usize;
                 let wav_start = i * wav_len;
                 let wav_end = wav_start + actual_len.min(wav_len);
                 &wav[wav_start..wav_end]
             } else {
                 // For non-batch mode, wav is a single concatenated audio
-                let actual_len = (text_to_speech.sample_rate as f32 * duration[0]) as usize;
-                &wav[..actual_len.min(wav.len())]
+                &wav[..]
             };
 
             let output_path = PathBuf::from(save_dir).join(&fname);

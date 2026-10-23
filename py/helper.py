@@ -223,25 +223,56 @@ class TextToSpeech:
         speed: float = 1.05,
         silence_duration: float = 0.3,
     ) -> tuple[np.ndarray, np.ndarray]:
+        try:
+            silence_duration = float(silence_duration)
+        except (TypeError, ValueError):
+            raise ValueError("silence_duration must be finite and nonnegative") from None
+        if not np.isfinite(silence_duration) or silence_duration < 0:
+            raise ValueError("silence_duration must be finite and nonnegative")
+
         assert (
             style.ttl.shape[0] == 1
         ), "Single speaker text to speech only supports single style"
         max_len = 120 if lang in ("ko", "ja") else 300
         text_list = chunk_text(text, max_len=max_len)
-        wav_cat = None
-        dur_cat = None
-        for text in text_list:
-            wav, dur_onnx = self._infer([text], [lang], style, total_step, speed)
-            if wav_cat is None:
-                wav_cat = wav
-                dur_cat = dur_onnx
+        wav_chunks = []
+        silence_samples = silence_duration * self.sample_rate
+        if not np.isfinite(silence_samples) or silence_samples > np.iinfo(np.intp).max:
+            raise ValueError("silence duration is too large")
+        silence_len = int(silence_samples)
+
+        for chunk_index, text_chunk in enumerate(text_list):
+            wav, dur_onnx = self._infer(
+                [text_chunk], [lang], style, total_step, speed
+            )
+            duration = float(dur_onnx[0])
+            if not np.isfinite(duration):
+                raise ValueError("predicted duration must be finite")
+            if wav.ndim != 2 or wav.shape[0] != 1:
+                raise ValueError("single-chunk inference must return one waveform row")
+
+            with np.errstate(over="ignore", invalid="ignore"):
+                requested_sample_count = (dur_onnx * self.sample_rate)[0]
+            if not np.isfinite(requested_sample_count):
+                sample_count = wav.shape[1] if requested_sample_count > 0 else 0
+            elif requested_sample_count >= wav.shape[1]:
+                sample_count = wav.shape[1]
             else:
-                silence = np.zeros(
-                    (1, int(silence_duration * self.sample_rate)), dtype=np.float32
+                sample_count = max(int(requested_sample_count), 0)
+            if chunk_index:
+                wav_chunks.append(
+                    np.zeros((1, silence_len), dtype=wav.dtype)
                 )
-                wav_cat = np.concatenate([wav_cat, silence, wav], axis=1)
-                dur_cat += dur_onnx + silence_duration
-        return wav_cat, dur_cat
+            wav_chunks.append(wav[:, :sample_count])
+
+        if wav_chunks:
+            wav_cat = np.concatenate(wav_chunks, axis=1)
+        else:
+            wav_cat = np.empty((1, 0), dtype=np.float32)
+        duration = np.array(
+            [wav_cat.shape[1] / self.sample_rate], dtype=np.float64
+        )
+        return wav_cat, duration
 
     def batch(
         self,
@@ -387,40 +418,112 @@ def sanitize_filename(text: str, max_len: int) -> str:
 
 def chunk_text(text: str, max_len: int = 300) -> list[str]:
     """
-    Split text into chunks by paragraphs and sentences.
+    Split text into nonempty chunks bounded by Unicode code points.
+
+    Paragraph boundaries stay separate. English sentence boundaries retain the
+    existing abbreviation exceptions, and common Unicode sentence marks split
+    even when the next sentence has no space. Overlong sentences split at spaces;
+    a single overlong token is hard-split at code-point boundaries. Whitespace
+    at chunk boundaries and sentence separators is normalized, while internal
+    whitespace in an unsplit sentence is preserved. Empty or whitespace-only
+    input returns no chunks. A hard split may divide a grapheme or expression
+    tag when keeping it whole would exceed max_len.
 
     Args:
-        text: Input text to chunk
-        max_len: Maximum length of each chunk (default: 300)
+        text: Input text to chunk.
+        max_len: Positive maximum number of Unicode code points per chunk.
 
     Returns:
-        List of text chunks
+        List of bounded text chunks.
+
+    Raises:
+        TypeError: If text is not str or max_len is not an integer.
+        ValueError: If max_len is not positive.
     """
     import re
 
-    # Split by paragraph (two or more newlines)
-    paragraphs = [p.strip() for p in re.split(r"\n\s*\n+", text.strip()) if p.strip()]
+    if not isinstance(text, str):
+        raise TypeError("text must be str")
+    if isinstance(max_len, bool) or not isinstance(max_len, int):
+        raise TypeError("max_len must be an integer")
+    if max_len <= 0:
+        raise ValueError("max_len must be greater than 0")
+
+    text = text.strip()
+    if not text:
+        return []
+
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n+", text) if p.strip()]
+    english_boundary = re.compile(
+        r"(?<!Mr\.)(?<!Mrs\.)(?<!Ms\.)(?<!Dr\.)(?<!Prof\.)(?<!Sr\.)(?<!Jr\.)(?<!Ph\.D\.)(?<!etc\.)(?<!e\.g\.)(?<!i\.e\.)(?<!vs\.)(?<!Inc\.)(?<!Ltd\.)(?<!Co\.)(?<!Corp\.)(?<!St\.)(?<!Ave\.)(?<!Blvd\.)(?<!\b[A-Z]\.)(?<=[.!?])\s+"
+    )
+    unicode_boundary = re.compile(r"[。！？｡．؟]+")
+
+    def sentence_segments(paragraph: str) -> list[tuple[str, str]]:
+        boundaries = [
+            (match.start(), match.end())
+            for match in english_boundary.finditer(paragraph)
+        ]
+        for match in unicode_boundary.finditer(paragraph):
+            separator_end = match.end()
+            while separator_end < len(paragraph) and paragraph[
+                separator_end
+            ].isspace():
+                separator_end += 1
+            boundaries.append((match.end(), separator_end))
+
+        segments = []
+        cursor = 0
+        pending_separator = ""
+        for sentence_end, separator_end in sorted(boundaries):
+            if sentence_end < cursor:
+                continue
+            sentence = paragraph[cursor:sentence_end].strip()
+            if sentence:
+                segments.append((sentence, pending_separator))
+            pending_separator = " " if separator_end > sentence_end else ""
+            cursor = separator_end
+        sentence = paragraph[cursor:].strip()
+        if sentence:
+            segments.append((sentence, pending_separator))
+        return segments
+
+    def split_long_sentence(sentence: str) -> list[str]:
+        remaining = sentence.strip()
+        pieces = []
+        while len(remaining) > max_len:
+            split_at = remaining.rfind(" ", 0, max_len + 1)
+            if split_at <= 0:
+                split_at = max_len
+                piece = remaining[:split_at]
+                remaining = remaining[split_at:]
+            else:
+                piece = remaining[:split_at].strip()
+                remaining = remaining[split_at + 1 :].lstrip()
+            if piece:
+                pieces.append(piece)
+        if remaining:
+            pieces.append(remaining)
+        return pieces
 
     chunks = []
-
     for paragraph in paragraphs:
-        paragraph = paragraph.strip()
-        if not paragraph:
-            continue
-
-        # Split by sentence boundaries (period, question mark, exclamation mark followed by space)
-        # But exclude common abbreviations like Mr., Mrs., Dr., etc. and single capital letters like F.
-        pattern = r"(?<!Mr\.)(?<!Mrs\.)(?<!Ms\.)(?<!Dr\.)(?<!Prof\.)(?<!Sr\.)(?<!Jr\.)(?<!Ph\.D\.)(?<!etc\.)(?<!e\.g\.)(?<!i\.e\.)(?<!vs\.)(?<!Inc\.)(?<!Ltd\.)(?<!Co\.)(?<!Corp\.)(?<!St\.)(?<!Ave\.)(?<!Blvd\.)(?<!\b[A-Z]\.)(?<=[.!?])\s+"
-        sentences = re.split(pattern, paragraph)
-
         current_chunk = ""
+        for sentence, separator in sentence_segments(paragraph):
+            candidate = current_chunk + (separator if current_chunk else "") + sentence
+            if len(candidate) <= max_len:
+                current_chunk = candidate
+                continue
 
-        for sentence in sentences:
-            if len(current_chunk) + len(sentence) + 1 <= max_len:
-                current_chunk += (" " if current_chunk else "") + sentence
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+                current_chunk = ""
+
+            if len(sentence) > max_len:
+                pieces = split_long_sentence(sentence)
+                chunks.extend(pieces[:-1])
+                current_chunk = pieces[-1]
             else:
-                if current_chunk:
-                    chunks.append(current_chunk.strip())
                 current_chunk = sentence
 
         if current_chunk:

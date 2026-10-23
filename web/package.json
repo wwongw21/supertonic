@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --experimental-loader ../tests/ort-loader.mjs --test helper.test.js"
   },
   "keywords": ["tts", "onnx", "speech-synthesis", "web"],
   "author": "",

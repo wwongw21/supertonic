@@ -701,34 +701,40 @@ class TextToSpeech {
     }
     
     func call(_ text: String, _ lang: String, _ style: Style, _ totalStep: Int, speed: Float = 1.05, silenceDuration: Float = 0.3) throws -> (wav: [Float], duration: Float) {
+        guard silenceDuration.isFinite, silenceDuration >= 0 else {
+            throw NSError(domain: "Supertonic", code: 1, userInfo: [NSLocalizedDescriptionKey: "Silence duration must be finite and nonnegative."])
+        }
         let maxLen = (lang == "ko" || lang == "ja") ? 120 : 300
         let chunks = chunkText(text, maxLen: maxLen)
         let langList = Array(repeating: lang, count: chunks.count)
         
         var wavCat = [Float]()
-        var durCat: Float = 0.0
+        let silenceLen = Int(silenceDuration * Float(sampleRate))
         
         for (i, chunk) in chunks.enumerated() {
             let result = try _infer([chunk], [langList[i]], style, totalStep, speed: speed)
             
             let dur = result.duration[0]
-            let wavLen = Int(Float(sampleRate) * dur)
+            guard dur.isFinite else {
+                throw NSError(domain: "Supertonic", code: 2, userInfo: [NSLocalizedDescriptionKey: "Predicted duration must be finite."])
+            }
+            let predictedSamples = Float(sampleRate) * dur
+            let wavLen = predictedSamples <= 0 ? 0
+                : (predictedSamples >= Float(result.wav.count)
+                    ? result.wav.count : Int(predictedSamples))
             let wavChunk = Array(result.wav.prefix(wavLen))
             
             if i == 0 {
                 wavCat = wavChunk
-                durCat = dur
             } else {
-                let silenceLen = Int(silenceDuration * Float(sampleRate))
                 let silence = [Float](repeating: 0.0, count: silenceLen)
                 
                 wavCat.append(contentsOf: silence)
                 wavCat.append(contentsOf: wavChunk)
-                durCat += silenceDuration + dur
             }
         }
         
-        return (wavCat, durCat)
+        return (wavCat, Float(wavCat.count) / Float(sampleRate))
     }
     
     func batch(_ textList: [String], _ langList: [String], _ style: Style, _ totalStep: Int, speed: Float = 1.05) throws -> (wav: [Float], duration: [Float]) {

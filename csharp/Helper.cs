@@ -435,6 +435,10 @@ namespace Supertonic
 
         public (float[] wav, float[] duration) Call(string text, string lang, Style style, int totalStep, float speed = 1.05f, float silenceDuration = 0.3f)
         {
+            if (!float.IsFinite(silenceDuration) || silenceDuration < 0.0f)
+            {
+                throw new ArgumentOutOfRangeException(nameof(silenceDuration), "Silence duration must be finite and nonnegative.");
+            }
             if (style.TtlShape[0] != 1)
             {
                 throw new ArgumentException("Single speaker text to speech only supports single style");
@@ -443,28 +447,35 @@ namespace Supertonic
             int maxLen = (lang == "ko" || lang == "ja") ? 120 : 300;
             var textList = Helper.ChunkText(text, maxLen);
             var wavCat = new List<float>();
-            float durCat = 0.0f;
+            int silenceLen = (int)(silenceDuration * SampleRate);
 
-            foreach (var chunk in textList)
+            for (int chunkIndex = 0; chunkIndex < textList.Count; chunkIndex++)
             {
+                var chunk = textList[chunkIndex];
                 var (wav, duration) = _Infer(new List<string> { chunk }, new List<string> { lang }, style, totalStep, speed);
+                float predictedDuration = duration[0];
+                if (!float.IsFinite(predictedDuration))
+                {
+                    throw new ArgumentException("Predicted duration must be finite.");
+                }
 
-                if (wavCat.Count == 0)
+                int sampleCount = 0;
+                if (predictedDuration > 0.0f)
                 {
-                    wavCat.AddRange(wav);
-                    durCat = duration[0];
+                    float predictedSamples = SampleRate * predictedDuration;
+                    sampleCount = predictedSamples >= wav.Length
+                        ? wav.Length
+                        : (int)predictedSamples;
                 }
-                else
+
+                if (chunkIndex > 0)
                 {
-                    int silenceLen = (int)(silenceDuration * SampleRate);
-                    var silence = new float[silenceLen];
-                    wavCat.AddRange(silence);
-                    wavCat.AddRange(wav);
-                    durCat += duration[0] + silenceDuration;
+                    wavCat.AddRange(new float[silenceLen]);
                 }
+                wavCat.AddRange(wav.Take(sampleCount));
             }
 
-            return (wavCat.ToArray(), new float[] { durCat });
+            return (wavCat.ToArray(), new float[] { (float)wavCat.Count / SampleRate });
         }
 
         public (float[] wav, float[] duration) Batch(List<string> textList, List<string> langList, Style style, int totalStep, float speed = 1.05f)

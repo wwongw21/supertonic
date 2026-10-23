@@ -137,14 +137,16 @@ struct ExampleONNX {
                     
                     if args.batch {
                         let wavLen = wav.count / bsz
-                        let actualLen = Int(Float(textToSpeech.sampleRate) * duration[i])
+                        let actualLen = min(
+                            wavLen,
+                            max(0, Int(Float(textToSpeech.sampleRate) * duration[i]))
+                        )
                         let wavStart = i * wavLen
                         let wavEnd = min(wavStart + actualLen, wavStart + wavLen)
                         wavOut = Array(wav[wavStart..<wavEnd])
                     } else {
-                        // For non-batch mode, wav is a single concatenated audio
-                        let actualLen = Int(Float(textToSpeech.sampleRate) * duration[0])
-                        wavOut = Array(wav.prefix(actualLen))
+                        // call() already returns per-chunk-trimmed long-form audio.
+                        wavOut = wav
                     }
                     
                     let outputPath = "\(args.saveDir)/\(fname)"
